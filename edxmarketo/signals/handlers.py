@@ -4,14 +4,14 @@ import json
 
 from django.conf import settings
 from django.dispatch import receiver
-from django.db.models.signals import post_save
 
 from courseware.courses import get_course
-from courseware.models import StudentModule, StudentModuleHistory
+from courseware.models import StudentModuleHistory
 from courseware.model_data import FieldDataCache
 from courseware.module_render import get_module_for_descriptor_internal
 from courseware.grades import manual_transaction, get_score
 from courseware.module_utils import yield_dynamic_descriptor_descendents
+from courseware.signals import grading_event
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 MIN_SCORED_PERCENTAGE_FOR_MARKETO_COMPLETE = 5  # 70
 
 
-@receiver(post_save, sender=StudentModule, dispatch_uid='edxapp.edxmarketo.handle_check_marketo_completion_score')
-def handle_check_marketo_completion_score(sender, instance, **kwargs):
+@receiver(grading_event, dispatch_uid='edxapp.edxmarketo.handle_check_marketo_completion_score')
+def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kwargs):
     """
     when a StudentModule is saved, check whether it is of a type that can affect
     our Marketo course completion percentage.  If so, calculate the new course
@@ -29,8 +29,13 @@ def handle_check_marketo_completion_score(sender, instance, **kwargs):
     """
     # import pdb; pdb.set_trace()
 
+    instance = module
+
     # only continue for problem submissions
     state_dict = json.loads(instance.state) if instance.state else defaultdict(bool)
+
+    # import pdb; pdb.set_trace()
+
     if not state_dict or instance.module_type not in \
             StudentModuleHistory.HISTORY_SAVING_TYPES or \
             'input_state' not in state_dict.keys():
@@ -38,7 +43,6 @@ def handle_check_marketo_completion_score(sender, instance, **kwargs):
         if state_dict['done']:
             return
 
-    import pdb; pdb.set_trace()
     course = get_course(instance.course_id)
     student = instance.student
     logger.info(('Checking InterSystems Marketo completion score for course '
@@ -62,7 +66,7 @@ def handle_check_marketo_completion_score(sender, instance, **kwargs):
             if settings.DEBUG:
                 section_descriptor = section['section_descriptor']
                 section_name = section_descriptor.display_name_with_default
-                logger.debug('Checking completion of section {}'.format(section_name))
+                logger.info('Checking completion of section {}'.format(section_name))
 
             def noop_track_function(event_type, event):
                 pass
@@ -93,7 +97,7 @@ def handle_check_marketo_completion_score(sender, instance, **kwargs):
                 graded = module_descriptor.graded
                 if graded and total > 0:
                     total_scorable_modules += 1
-                    if correct > 0:
+                    if correct > 0:  # just has to have a non-zero score
                         non_zero_module_scores += 1
 
         if total_scorable_modules > 0:
@@ -106,3 +110,4 @@ def handle_check_marketo_completion_score(sender, instance, **kwargs):
                 # inform Marketo that this course is 'complete'
                 logger.info(('Marking course {0} complete (70%+) in Marketo '
                              'for student {1}.').format(instance.course_id, student))
+
