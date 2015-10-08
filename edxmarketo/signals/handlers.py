@@ -40,10 +40,6 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
         """
         logger.info(('Marking course {0} complete (70%+) in Marketo '
                      'for Lead with email {1}.').format(course_id, email))
-        course_map = microsite.get_value("marketo_course_complete_field_map", None)
-        if not course_map:
-            logger.warn("Could not find Marketo course completion field map.")
-            return
         mkto_field_id = course_map[course_id]
 
         try:
@@ -52,20 +48,43 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
                                 lookupValue=email,
                                 values={mkto_field_id: complete})
             if status != 'updated':
-                raise MarketoException("Update failed with status {}".format(status))
+                raise MarketoException("Update failed with status {0}".format(status))
 
         except MarketoException as e:
             logger.warn(('Failed to mark course {0} complete for Lead with '
                          'email {1}.  Error: {2}').format(course_id, email, e))
 
-    try:
-        if not microsite.get_value("course_enable_marketo_integration") and not \
-                getattr(settings.FEATURES, "COURSE_ENABLE_MARKETO_INTEGRATION", None):
-            return
-    except KeyError:
+    # TODO: cache
+    def check_marketo_complete(course_id, email):
+        """
+        check if a course is already marked as complete in Marketo
+        TODO: prefer storing this information in a model so we don't have to
+        keep requesting from the Marketo API but this is expedient for now.
+        """
+        mkto_field_id = course_map[course_id]
+        try:
+            mc = get_marketo_client()
+            complete = mc.execute(method='get_leads', filtr='email',
+                                  values=(email,), fields=(mkto_field_id,))
+            if len(complete) > 1:
+                raise MarketoException
+            return complete[0][mkto_field_id]
+        except MarketoException:
+            # if we can't connect to Marketo or have some error with API,
+            # don't continue trying to check completion
+            return True
+
+    if not microsite.get_value("course_enable_marketo_integration") and not \
+            getattr(settings.FEATURES, "COURSE_ENABLE_MARKETO_INTEGRATION", None):
         return
 
+    course_map = microsite.get_value("marketo_course_complete_field_map", None)
+    if not course_map:
+            logger.warn("Could not find Marketo course completion field map.")
+            return
+
     instance = module
+    student = instance.student
 
     # only continue for problem submissions
     state_dict = json.loads(instance.state) if instance.state else defaultdict(bool)
@@ -74,11 +93,12 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
             StudentModuleHistory.HISTORY_SAVING_TYPES or \
             'input_state' not in state_dict.keys():
         return
-        if state_dict['done']:
-            return
+    if check_marketo_complete(str(instance.course_id), student.email):
+        # already marked complete.  don't need to keep checking
+        return
 
     course = get_course(instance.course_id)
-    student = instance.student
+
     logger.info(('Checking InterSystems Marketo completion score for course '
                 '{0}, student {1}').format(instance.course_id, student))
 
@@ -108,7 +128,7 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
             def create_module(descriptor):
                 '''creates an XModule instance given a descriptor'''
                 with manual_transaction():
-                    field_data_cache = FieldDataCache([descriptor], course.id, 
+                    field_data_cache = FieldDataCache([descriptor], course.id,
                                                       student)
 
                 # don't need tracking/xqueue but we have to pass something
