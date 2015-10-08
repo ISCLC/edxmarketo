@@ -13,6 +13,12 @@ from courseware.grades import manual_transaction, get_score
 from courseware.module_utils import yield_dynamic_descriptor_descendents
 from courseware.signals import grading_event
 
+from microsite_configuration import microsite
+
+from pythonmarketo.helper.exceptions import MarketoException
+
+from edxmarketo.utils import get_marketo_client
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,14 +33,42 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
     completion percentage for the StudentModule's related Course, and then
     make a REST API request to Marketo to update the completion field.
     """
-    # import pdb; pdb.set_trace()
+
+    def update_marketo_complete(course_id, email, complete=True):
+        """
+        update Marketo course completeness field via REST API
+        """
+        logger.info(('Marking course {0} complete (70%+) in Marketo '
+                     'for Lead with email {1}.').format(course_id, email))
+        course_map = microsite.get_value("marketo_course_complete_field_map", None)
+        if not course_map:
+            logger.warn("Could not find Marketo course completion field map.")
+            return
+        mkto_field_id = course_map[course_id]
+
+        try:
+            mc = get_marketo_client()
+            status = mc.execute(method='update_lead', lookupField='email',
+                                lookupValue=email,
+                                values={mkto_field_id: complete})
+            if status != 'updated':
+                raise MarketoException("Update failed with status {}".format(status))
+
+        except MarketoException as e:
+            logger.warn(('Failed to mark course {0} complete for Lead with '
+                         'email {1}.  Error: {2}').format(course_id, email, e))
+
+    try:
+        if not microsite.get_value("course_enable_marketo_integration") and not \
+                getattr(settings.FEATURES, "COURSE_ENABLE_MARKETO_INTEGRATION", None):
+            return
+    except KeyError:
+        return
 
     instance = module
 
     # only continue for problem submissions
     state_dict = json.loads(instance.state) if instance.state else defaultdict(bool)
-
-    # import pdb; pdb.set_trace()
 
     if not state_dict or instance.module_type not in \
             StudentModuleHistory.HISTORY_SAVING_TYPES or \
@@ -101,13 +135,10 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
                         non_zero_module_scores += 1
 
         if total_scorable_modules > 0:
-            # import pdb; pdb.set_trace()
             nonzero_modules = float(non_zero_module_scores) / float(total_scorable_modules)
 
             if nonzero_modules * 100 >= \
                     MIN_SCORED_PERCENTAGE_FOR_MARKETO_COMPLETE:
 
                 # inform Marketo that this course is 'complete'
-                logger.info(('Marking course {0} complete (70%+) in Marketo '
-                             'for student {1}.').format(instance.course_id, student))
-
+                update_marketo_complete(str(instance.course_id), student.email)
