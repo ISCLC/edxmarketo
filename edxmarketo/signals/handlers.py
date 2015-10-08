@@ -16,7 +16,7 @@ from courseware.signals import grading_event
 from microsite_configuration import microsite
 
 from pythonmarketo.helper.exceptions import MarketoException
-from keyedcache import cache_set, cache_get, cache_key, NotCachedError
+from keyedcache import cache_set, cache_get, cache_key, NotCachedError, cache_enabled, cache_enable
 
 from edxmarketo.utils import get_marketo_client
 
@@ -56,6 +56,7 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
                          'email {1}.  Error: {2}').format(course_id, email, e))
 
     def cached_check_marketo_complete(course_id, email):
+        # email = 'bryanlandia+marketotest1@gmail.com'
         cachekey = cache_key('marketo_complete_cache',
                              course=course_id, email=email)
         try:
@@ -71,6 +72,7 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
         """
         check if a course is already marked as complete in Marketo
         """
+        # email = 'bryanlandia+marketotest1@gmail.com'
         mkto_field_id = course_map[course_id]
         try:
             mc = get_marketo_client()
@@ -83,6 +85,10 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
             if completeness:  # only cache True
                 cachekey = cache_key('marketo_complete_cache',
                                      course=course_id, email=email)
+                # our version of keyedcache doesn't recognize a cache is 
+                # enabled in our multi-cache setup.
+                if not cache_enabled():
+                    cache_enable()
                 cache_set(cachekey, value=completeness)
 
             return completeness
