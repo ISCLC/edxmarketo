@@ -16,6 +16,7 @@ from courseware.signals import grading_event
 from microsite_configuration import microsite
 
 from pythonmarketo.helper.exceptions import MarketoException
+from keyedcache import cache_set, cache_get, cache_key, NotCachedError
 
 from edxmarketo.utils import get_marketo_client
 
@@ -54,12 +55,21 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
             logger.warn(('Failed to mark course {0} complete for Lead with '
                          'email {1}.  Error: {2}').format(course_id, email, e))
 
-    # TODO: cache
+    def cached_check_marketo_complete(course_id, email):
+        cachekey = cache_key('marketo_complete_cache',
+                             course=course_id, email=email)
+        try:
+            value = cache_get(cachekey)
+        except NotCachedError:
+            value = None
+        if value is None:
+            return check_marketo_complete(course_id, email)
+        else:
+            return value
+
     def check_marketo_complete(course_id, email):
         """
         check if a course is already marked as complete in Marketo
-        TODO: prefer storing this information in a model so we don't have to
-        keep requesting from the Marketo API but this is expedient for now.
         """
         mkto_field_id = course_map[course_id]
         try:
@@ -68,7 +78,14 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
                                   values=(email,), fields=(mkto_field_id,))
             if len(complete) > 1:
                 raise MarketoException
-            return complete[0][mkto_field_id]
+
+            completeness = complete[0][mkto_field_id]
+            if completeness:  # only cache True
+                cachekey = cache_key('marketo_complete_cache',
+                                     course=course_id, email=email)
+                cache_set(cachekey, value=completeness)
+
+            return completeness
         except MarketoException:
             # if we can't connect to Marketo or have some error with API,
             # don't continue trying to check completion
@@ -93,7 +110,7 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
             StudentModuleHistory.HISTORY_SAVING_TYPES or \
             'input_state' not in state_dict.keys():
         return
-    if check_marketo_complete(str(instance.course_id), student.email):
+    if cached_check_marketo_complete(str(instance.course_id), student.email):
         # already marked complete.  don't need to keep checking
         return
 
