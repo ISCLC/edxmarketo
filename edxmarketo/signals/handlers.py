@@ -23,7 +23,7 @@ from edxmarketo.utils import get_marketo_client
 logger = logging.getLogger(__name__)
 
 
-MIN_SCORED_PERCENTAGE_FOR_MARKETO_COMPLETE = 5  # 70
+MIN_SCORED_PERCENTAGE_FOR_MARKETO_COMPLETE = 70
 
 
 @receiver(grading_event, dispatch_uid='edxapp.edxmarketo.handle_check_marketo_completion_score')
