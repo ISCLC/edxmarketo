@@ -13,7 +13,7 @@ from courseware.grades import manual_transaction, get_score
 from courseware.module_utils import yield_dynamic_descriptor_descendents
 from courseware.signals import grading_event
 
-from microsite_configuration import microsite
+from microsite_configuration.microsite import get_value  # keep as-is for test mocking
 
 from pythonmarketo.helper.exceptions import MarketoException
 from keyedcache import cache_set, cache_get, cache_key, NotCachedError, cache_enabled, cache_enable
@@ -26,6 +26,71 @@ logger = logging.getLogger(__name__)
 MIN_SCORED_PERCENTAGE_FOR_MARKETO_COMPLETE = 70
 
 
+def cached_check_marketo_complete(course_id, email, course_map):
+    # email = 'bryanlandia+marketotest1@gmail.com'
+    cachekey = cache_key('marketo_complete_cache',
+                         course=course_id, email=email)
+    try:
+        value = cache_get(cachekey)
+    except NotCachedError:
+        value = None
+    if value is None:
+        return check_marketo_complete(course_id, email, course_map)
+    else:
+        return value
+
+
+def check_marketo_complete(course_id, email, course_map):
+    """
+    check if a course is already marked as complete in Marketo
+    """
+    # email = 'bryanlandia+marketotest1@gmail.com'
+    mkto_field_id = course_map[course_id]
+    try:
+        mc = get_marketo_client()
+        complete = mc.execute(method='get_leads', filtr='email',
+                              values=(email,), fields=(mkto_field_id,))
+        if len(complete) > 1:
+            raise MarketoException
+
+        completeness = complete[0][mkto_field_id]
+        if completeness:  # only cache True
+            cachekey = cache_key('marketo_complete_cache',
+                                 course=course_id, email=email)
+            # our version of keyedcache doesn't recognize a cache is 
+            # enabled in our multi-cache setup.
+            if not cache_enabled():
+                cache_enable()
+            cache_set(cachekey, value=completeness)
+
+        return completeness
+    except MarketoException:
+        # if we can't connect to Marketo or have some error with API,
+        # don't continue trying to check completion
+        return True
+
+
+def update_marketo_complete(course_map, course_id, email, complete=True):
+    """
+    update Marketo course completeness field via REST API
+    """
+    logger.info(('Marking course {0} complete (70%+) in Marketo '
+                 'for Lead with email {1}.').format(course_id, email))
+    mkto_field_id = course_map[course_id]
+
+    try:
+        mc = get_marketo_client()
+        status = mc.execute(method='update_lead', lookupField='email',
+                            lookupValue=email,
+                            values={mkto_field_id: complete})
+        if status != 'updated':
+            raise MarketoException("Update failed with status {0}".format(status))
+
+    except MarketoException as e:
+        logger.warn(('Failed to mark course {0} complete for Lead with '
+                     'email {1}.  Error: {2}').format(course_id, email, e))
+
+
 @receiver(grading_event, dispatch_uid='edxapp.edxmarketo.handle_check_marketo_completion_score')
 def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kwargs):
     """
@@ -34,80 +99,22 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
     completion percentage for the StudentModule's related Course, and then
     make a REST API request to Marketo to update the completion field.
     """
-
-    def update_marketo_complete(course_id, email, complete=True):
-        """
-        update Marketo course completeness field via REST API
-        """
-        logger.info(('Marking course {0} complete (70%+) in Marketo '
-                     'for Lead with email {1}.').format(course_id, email))
-        mkto_field_id = course_map[course_id]
-
-        try:
-            mc = get_marketo_client()
-            status = mc.execute(method='update_lead', lookupField='email',
-                                lookupValue=email,
-                                values={mkto_field_id: complete})
-            if status != 'updated':
-                raise MarketoException("Update failed with status {0}".format(status))
-
-        except MarketoException as e:
-            logger.warn(('Failed to mark course {0} complete for Lead with '
-                         'email {1}.  Error: {2}').format(course_id, email, e))
-
-    def cached_check_marketo_complete(course_id, email):
-        # email = 'bryanlandia+marketotest1@gmail.com'
-        cachekey = cache_key('marketo_complete_cache',
-                             course=course_id, email=email)
-        try:
-            value = cache_get(cachekey)
-        except NotCachedError:
-            value = None
-        if value is None:
-            return check_marketo_complete(course_id, email)
-        else:
-            return value
-
-    def check_marketo_complete(course_id, email):
-        """
-        check if a course is already marked as complete in Marketo
-        """
-        # email = 'bryanlandia+marketotest1@gmail.com'
-        mkto_field_id = course_map[course_id]
-        try:
-            mc = get_marketo_client()
-            complete = mc.execute(method='get_leads', filtr='email',
-                                  values=(email,), fields=(mkto_field_id,))
-            if len(complete) > 1:
-                raise MarketoException
-
-            completeness = complete[0][mkto_field_id]
-            if completeness:  # only cache True
-                cachekey = cache_key('marketo_complete_cache',
-                                     course=course_id, email=email)
-                # our version of keyedcache doesn't recognize a cache is 
-                # enabled in our multi-cache setup.
-                if not cache_enabled():
-                    cache_enable()
-                cache_set(cachekey, value=completeness)
-
-            return completeness
-        except MarketoException:
-            # if we can't connect to Marketo or have some error with API,
-            # don't continue trying to check completion
-            return True
-
-    if not microsite.get_value("course_enable_marketo_integration") and not \
-            getattr(settings.FEATURES, "COURSE_ENABLE_MARKETO_INTEGRATION", None):
+    if not (get_value("course_enable_marketo_integration", None) and not \
+            getattr(settings.FEATURES, "COURSE_ENABLE_MARKETO_INTEGRATION", None)
+            ):
         return
-
-    course_map = microsite.get_value("marketo_course_complete_field_map", None)
+    course_map = get_value("marketo_course_complete_field_map", None)
     if not course_map:
-            logger.warn("Could not find Marketo course completion field map.")
-            return
+        logger.warn("Could not find Marketo course completion field map.")
+        return
 
     instance = module
     student = instance.student
+
+    # import pdb; pdb.set_trace()
+    if str(instance.course_id) not in course_map.keys():
+        return
+
 
     # only continue for problem submissions
     state_dict = json.loads(instance.state) if instance.state else defaultdict(bool)
@@ -116,7 +123,9 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
             StudentModuleHistory.HISTORY_SAVING_TYPES or \
             'input_state' not in state_dict.keys():
         return
-    if cached_check_marketo_complete(str(instance.course_id), student.email):
+
+    if cached_check_marketo_complete(str(instance.course_id), student.email,
+                                     course_map):
         # already marked complete.  don't need to keep checking
         return
 
@@ -184,4 +193,4 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
                     MIN_SCORED_PERCENTAGE_FOR_MARKETO_COMPLETE:
 
                 # inform Marketo that this course is 'complete'
-                update_marketo_complete(str(instance.course_id), student.email)
+                update_marketo_complete(course_map, str(instance.course_id), student.email)

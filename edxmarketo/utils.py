@@ -1,9 +1,16 @@
+from os import environ
 import logging
 
 from django.conf import settings
 from microsite_configuration import microsite
 
-from edxmarketo.app_settings import MARKETO_HOST, MARKETO_CLIENT_ID, MARKETO_CLIENT_SECRET
+try:
+    from edxmarketo.app_settings import MARKETO_HOST, MARKETO_CLIENT_ID, MARKETO_CLIENT_SECRET
+except ImportError:
+    if environ.get('DJANGO_SETTINGS_MODULE') in (
+            'lms.envs.acceptance', 'lms.envs.test',
+            'cms.envs.acceptance', 'cms.envs.test'):
+        pass
 
 # if settings.DEBUG:
 #     from edxmarketo.tests import MockMarketoClient as MarketoClient

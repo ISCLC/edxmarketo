@@ -32,5 +32,6 @@ setup(
     ],
     install_requires=[
         'pythonmarketo',
+        'mock_django == 0.6.9'
     ],
 )
