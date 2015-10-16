@@ -99,6 +99,10 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
     completion percentage for the StudentModule's related Course, and then
     make a REST API request to Marketo to update the completion field.
     """
+    if not grade:
+        # a zero grade can't increase the Marketo complete score so no reason to check
+        # we shouldn't get a False or None grade so we'll throw those out too
+        return
     if not (get_value("course_enable_marketo_integration", None) and not \
             getattr(settings.FEATURES, "COURSE_ENABLE_MARKETO_INTEGRATION", None)
             ):
@@ -121,7 +125,7 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
 
     if not state_dict or instance.module_type not in \
             StudentModuleHistory.HISTORY_SAVING_TYPES or \
-            'input_state' not in state_dict.keys():
+            'student_answers' not in state_dict.keys():
         return
 
     if cached_check_marketo_complete(str(instance.course_id), student.email,
