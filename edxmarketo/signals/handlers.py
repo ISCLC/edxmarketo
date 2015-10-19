@@ -35,6 +35,7 @@ def cached_check_marketo_complete(course_id, email, course_map):
     except NotCachedError:
         value = None
     if value is None:
+        # import pdb; pdb.set_trace()
         return check_marketo_complete(course_id, email, course_map)
     else:
         return value
@@ -45,6 +46,7 @@ def check_marketo_complete(course_id, email, course_map):
     check if a course is already marked as complete in Marketo
     """
     # email = 'bryanlandia+marketotest1@gmail.com'
+    # import pdb; pdb.set_trace()
     mkto_field_id = course_map[course_id]
     try:
         mc = get_marketo_client()
@@ -115,10 +117,8 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
     instance = module
     student = instance.student
 
-    # import pdb; pdb.set_trace()
     if str(instance.course_id) not in course_map.keys():
         return
-
 
     # only continue for problem submissions
     state_dict = json.loads(instance.state) if instance.state else defaultdict(bool)
@@ -127,6 +127,7 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
             StudentModuleHistory.HISTORY_SAVING_TYPES or \
             'student_answers' not in state_dict.keys():
         return
+    # import pdb; pdb.set_trace()        
 
     if cached_check_marketo_complete(str(instance.course_id), student.email,
                                      course_map):

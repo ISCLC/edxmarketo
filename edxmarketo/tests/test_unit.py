@@ -26,6 +26,12 @@ from opaque_keys.edx.locations import SlashSeparatedCourseKey
 from edxmarketo.tests.common import MICROSITE_CONFIG_ENABLED
 from edxmarketo.signals import handlers
 
+COMPLETE_FIELD_MAP = MICROSITE_CONFIG_ENABLED['default']['marketo_course_complete_field_map']
+
+MOCK_COMPLETION_CACHE = {
+    '1::marketo_complete_cache::course::testorg/103/marketo_complete::email::dummy_lead@example.com': True,
+}
+
 
 def mock_microsite_get_value(value, default, enabled):
     # mock out microsite get value so we don't need to worry about
@@ -37,6 +43,10 @@ def mock_microsite_get_value(value, default, enabled):
         return enabled
     else:
         return MICROSITE_CONFIG_ENABLED['default'][value]
+
+
+def mock_cache_get(cache_key):
+    return MOCK_COMPLETION_CACHE[cache_key]
 
 
 class FilesystemMarketoClient(object):
@@ -55,13 +65,19 @@ class FilesystemMarketoClient(object):
             """
             pass
 
+        # import pdb; pdb.set_trace()
         return eval(method(**kwargs))
+
+
+def mock_get_marketo_client():
+    # import pdb; pdb.set_trace()
+    return FilesystemMarketoClient()
 
 
 @override_settings(
     MODULESTORE=TEST_DATA_MOCK_MODULESTORE
 )
-@patch('pythonmarketo.client.MarketoClient', FilesystemMarketoClient)
+@patch('edxmarketo.utils.get_marketo_client', mock_get_marketo_client)
 class TestMarketoIntegration(ModuleStoreTestCase):
     """
     Test iteration through student gradesets.
@@ -69,8 +85,10 @@ class TestMarketoIntegration(ModuleStoreTestCase):
     COURSE_ORG = "testorg"
     COURSE_NUMBER_YES = "101"
     COURSE_NUMBER_NO = "102"
+    COURSE_NUMBER_COMPLETED = "103"
     COURSE_DISPLAY_NAME_YES = "marketo_test"
     COURSE_DISPLAY_NAME_NO = "no_marketo_test"
+    COURSE_DISPLAY_NAME_COMPLETED = "marketo_complete"
     # COURSE_RUN = "2015_1"
 
     def setUp(self):
@@ -97,22 +115,33 @@ class TestMarketoIntegration(ModuleStoreTestCase):
             course=self.COURSE_NUMBER_NO,
             display_name=self.COURSE_DISPLAY_NAME_NO
         )
+        self.course_completed = CourseFactory.create(
+            org=self.COURSE_ORG,
+            course=self.COURSE_NUMBER_COMPLETED,
+            display_name=self.COURSE_DISPLAY_NAME_COMPLETED
+        )
 
     def make_problems(self):
         c1_key = SlashSeparatedCourseKey(self.course_marketo.org, self.course_marketo.number, self.course_marketo.display_name)
-        c2_key = SlashSeparatedCourseKey(self.course_marketo.org, self.course_nomarketo.number, self.course_marketo.display_name)
+        c2_key = SlashSeparatedCourseKey(self.course_nomarketo.org, self.course_nomarketo.number, self.course_marketo.display_name)
+        c3_key = SlashSeparatedCourseKey(self.course_completed.org, self.course_completed.number, self.course_completed.display_name)
         c1_prob = partial(c1_key.make_usage_key, u'problem')
         c2_prob = partial(c2_key.make_usage_key, u'problem')
         c1_chapter = partial(c1_key.make_usage_key, u'chapter')
+        c3_prob = partial(c3_key.make_usage_key, u'problem')
         self.c1_p1_key = c1_prob('problem1')
         self.c1_p2_key = c1_prob('problem2')
         self.c1_p3_key = c1_prob('problem3')
-        self.c1_p4_key = c1_prob('problem4')
+        self.c1_p4a_key = c1_prob('problem4a')
+        self.c1_p4b_key = c1_prob('problem4b')
+        self.c1_p4c_key = c1_prob('problem4c')
+        self.c1_p4d_key = c1_prob('problem4d')
         self.c1_p5_key = c1_prob('problem5')
         self.c1_p6_key = c1_prob('problem6')
         self.c1_p7_key = c1_prob('problem7')
         self.c2_p1_key = c2_prob('problem1')
         self.c1_chapter_key = c1_chapter('chapter1')
+        self.c3_p1_key = c3_prob('problem1')
 
     def make_studentmodules(self):
         """
@@ -155,19 +184,43 @@ class TestMarketoIntegration(ModuleStoreTestCase):
                                                       state='{"student_answers":""}',
                                                       module_state_key=self.c1_p2_key),
                 # yes total grade, yes Marketo course, zero score out of non-zero total
-                'smod_4': StudentModuleFactory.create(student=students[0],
-                                                      course_id=self.course_marketo.id,
-                                                      grade=0,
-                                                      max_grade=3,
-                                                      state='{"student_answers":""}',
-                                                      module_state_key=self.c1_p3_key),
+                'smod_4a': StudentModuleFactory.create(student=students[0],
+                                                       course_id=self.course_marketo.id,
+                                                       grade=0,
+                                                       max_grade=3,
+                                                       state='{"student_answers":""}',
+                                                       module_state_key=self.c1_p4a_key),
+
                 # yes total grade, yes Marketo course, non-zero score out of non-zero total
-                'smod_5': StudentModuleFactory.create(student=students[0],
-                                                      course_id=self.course_marketo.id,
-                                                      grade=1,
-                                                      max_grade=3,
-                                                      state='{"student_answers":""}',
-                                                      module_state_key=self.c1_p4_key),
+                'smod_4b': StudentModuleFactory.create(student=students[0],
+                                                       course_id=self.course_marketo.id,
+                                                       grade=2,
+                                                       max_grade=3,
+                                                       state='{"student_answers":""}',
+                                                       module_state_key=self.c1_p4b_key),
+                # yes total grade, yes Marketo course, non-zero score out of non-zero total
+                'smod_4c': StudentModuleFactory.create(student=students[0],
+                                                       course_id=self.course_marketo.id,
+                                                       grade=3,
+                                                       max_grade=3,
+                                                       state='{"student_answers":""}',
+                                                       module_state_key=self.c1_p4c_key),
+
+                # yes total grade, yes Marketo course, non-zero score out of non-zero total
+                'smod_4d': StudentModuleFactory.create(student=students[0],
+                                                       course_id=self.course_marketo.id,
+                                                       grade=7,
+                                                       max_grade=8,
+                                                       state='{"student_answers":""}',
+                                                       module_state_key=self.c1_p4d_key),                
+
+                # # yes total grade, yes Marketo course, non-zero score out of non-zero total
+                # 'smod_5': StudentModuleFactory.create(student=students[0],
+                #                                       course_id=self.course_marketo.id,
+                #                                       grade=1,
+                #                                       max_grade=3,
+                #                                       state='{"student_answers":""}',
+                #                                       module_state_key=self.c1_p4a_key),
                 # yes total grade, yes Marketo course, non-zero score out of non-zero total
                 'smod_6': StudentModuleFactory.create(student=students[0],
                                                       course_id=self.course_marketo.id,
@@ -194,8 +247,14 @@ class TestMarketoIntegration(ModuleStoreTestCase):
                                                       course_id=self.course_marketo.id,
                                                       state='{}',
                                                       module_state_key=self.c1_p7_key), 
-
-
+                # cached course completion available
+                'smod_10': StudentModuleFactory.create(module_type='problem',
+                                                       student=students[0],
+                                                       grade=1,
+                                                       max_grade=2,
+                                                       course_id=self.course_completed.id,
+                                                       state='{"student_answers":""}',
+                                                       module_state_key=self.c3_p1_key),
             },
             'student1_nolead': {
                 'smod_1': StudentModuleFactory.create(student=students[1],
@@ -203,7 +262,7 @@ class TestMarketoIntegration(ModuleStoreTestCase):
                                                       grade=2,
                                                       max_grade=3,
                                                       state='{"student_answers":""}',
-                                                      module_state_key=self.c1_p4_key),
+                                                      module_state_key=self.c1_p4a_key),
             }
 
         }
@@ -231,7 +290,7 @@ class TestMarketoIntegration(ModuleStoreTestCase):
             # course_id, email, course_map
             dummy_cached_check.assert_called_once_with('testorg/101/marketo_test',
                                                        'dummy_lead@example.com',
-                                                       {'testorg/101/marketo_test': 'Course_1_Completed__c'})
+                                                       COMPLETE_FIELD_MAP)
 
     @patch('edxmarketo.signals.handlers.get_value', partial(mock_microsite_get_value, enabled=True))
     def test_dont_check_if_course_not_integrated_with_marketo(self):
@@ -256,7 +315,7 @@ class TestMarketoIntegration(ModuleStoreTestCase):
     def test_dont_check_for_completion_if_problem_grade_is_zero(self):
         # if so, no way it can increase the Marketo complete score
         with patch('edxmarketo.signals.handlers.cached_check_marketo_complete') as dummy_cached_check:
-            smodule = self.student_modules['student1_yeslead']['smod_4']
+            smodule = self.student_modules['student1_yeslead']['smod_4a']
             handlers.handle_check_marketo_completion_score(sender=smodule, module=smodule, grade=smodule.grade, max_grade=smodule.max_grade)
             self.assertEquals(0, dummy_cached_check.call_count)
 
@@ -268,9 +327,32 @@ class TestMarketoIntegration(ModuleStoreTestCase):
             handlers.handle_check_marketo_completion_score(sender=smodule, module=smodule, grade=smodule.grade, max_grade=smodule.max_grade)
             self.assertEquals(0, dummy_cached_check.call_count)
 
+    @patch('edxmarketo.signals.handlers.get_value', partial(mock_microsite_get_value, enabled=True))
+    @patch('edxmarketo.signals.handlers.cache_get', mock_cache_get)
+    def test_dont_check_if_completion_cached(self):
+        with patch('edxmarketo.signals.handlers.cached_check_marketo_complete') as dummy_cached_check:
+            with patch('edxmarketo.signals.handlers.check_marketo_complete') as dummy_check:
+                smodule = self.student_modules['student1_yeslead']['smod_10']
+                handlers.handle_check_marketo_completion_score(sender=smodule, module=smodule, grade=smodule.grade, max_grade=smodule.max_grade)
+                self.assertEquals(1, dummy_cached_check.call_count)
+                self.assertEquals(0, dummy_check.call_count)
+
+    @patch('edxmarketo.signals.handlers.get_value', partial(mock_microsite_get_value, enabled=True))
+    def test_normal_grade_case_causes_completion(self):
+        with patch('edxmarketo.signals.handlers.cached_check_marketo_complete') as dummy_cached_check:
+            with patch('edxmarketo.signals.handlers.check_marketo_complete') as dummy_check:
+                with patch('edxmarketo.signals.handlers.update_marketo_complete') as dummy_update_marketo_complete:
+                    smodule = self.student_modules['student1_yeslead']['smod_4b']
+                    handlers.handle_check_marketo_completion_score(sender=smodule, module=smodule, grade=smodule.grade, max_grade=smodule.max_grade)
+                    self.assertEquals(1, dummy_cached_check.call_count)
+                    self.assertEquals(1, dummy_check.call_count)
+                    # we should have a Marketo-complete course... do the update
+                    dummy_update_marketo_complete.assert_called_once_with(COMPLETE_FIELD_MAP,
+                                                                          'testorg/101/marketo_test',
+                                                                          'dummy_lead@example.com')
+
     # tests to do
     # elements of system for course Marketo-complete:
-    #  - caching works so we don't have to make a request to client if already stored values
     #  - getting overall course completion value of 70%+ for student/course
     #     - make sure that non-graded modules don't affect this
     #     - mock out get_score to return some different combos of (correct, total) tuple

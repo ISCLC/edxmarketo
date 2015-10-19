@@ -10,7 +10,7 @@ except ImportError:
     if environ.get('DJANGO_SETTINGS_MODULE') in (
             'lms.envs.acceptance', 'lms.envs.test',
             'cms.envs.acceptance', 'cms.envs.test'):
-        pass
+        MARKETO_HOST = MARKETO_CLIENT_ID = MARKETO_CLIENT_SECRET = ''
 
 # if settings.DEBUG:
 #     from edxmarketo.tests import MockMarketoClient as MarketoClient
