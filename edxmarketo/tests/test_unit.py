@@ -38,7 +38,7 @@ def mock_microsite_get_value(value, default, enabled):
     # middleware/requests here
 
     # TODO: couldn't figure out how to combine an override_settings decorator in the test
-    # method with a patch context manager, so we use this with a partial passing in enabled
+    # method with a patch context manager, so we use this with a partial, passing in enabled
     if value == 'course_enable_marketo_integration':
         return enabled
     else:

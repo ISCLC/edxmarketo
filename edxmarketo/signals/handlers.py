@@ -15,6 +15,8 @@ from courseware.signals import grading_event
 
 from microsite_configuration.microsite import get_value  # keep as-is for test mocking
 
+from student.signals import va_enrollment_event
+
 from pythonmarketo.helper.exceptions import MarketoException
 from keyedcache import cache_set, cache_get, cache_key, NotCachedError, cache_enabled, cache_enable
 
@@ -127,7 +129,6 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
             StudentModuleHistory.HISTORY_SAVING_TYPES or \
             'student_answers' not in state_dict.keys():
         return
-    # import pdb; pdb.set_trace()        
 
     if cached_check_marketo_complete(str(instance.course_id), student.email,
                                      course_map):
@@ -199,3 +200,30 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
 
                 # inform Marketo that this course is 'complete'
                 update_marketo_complete(course_map, str(instance.course_id), student.email)
+
+
+@receiver(va_enrollment_event)
+def handle_va_enrollment_event(sender, student, **kwargs):
+    """
+    set Marketo VA Learning Path Enrolled for Lead corresponding to user
+    """
+    if not (get_value("course_enable_marketo_integration", None) and not \
+            getattr(settings.FEATURES, "COURSE_ENABLE_MARKETO_INTEGRATION", None)
+            ):
+        return
+
+    logger.info(('Setting VA Learning Path Enrolled for Lead with email {0}.').format(student.email))
+    mkto_field_id = get_value("marketo_va_enrollment_field_id", None)
+    if not mkto_field_id:
+        logger.warn(('Can\'t set VA Learning Path Enrolled for Lead with email {0}.').format(student.email))
+
+    try:
+        mc = get_marketo_client()
+        status = mc.execute(method='update_lead', lookupField='email',
+                            lookupValue=student.email,
+                            values={mkto_field_id: True})
+        if status != 'updated':
+            raise MarketoException("Update failed with status {0}".format(status))
+
+    except MarketoException as e:
+        logger.warn(('Can\'t set VA Learning Path Enrolled for Lead with email {0}.').format(student.email))

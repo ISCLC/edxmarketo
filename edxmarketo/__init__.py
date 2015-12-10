@@ -1,1 +1,1 @@
-from .signals.handlers import handle_check_marketo_completion_score
+from edxmarketo.signals.handlers import handle_check_marketo_completion_score, handle_va_enrollment_event
