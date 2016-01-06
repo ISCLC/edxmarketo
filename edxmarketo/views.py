@@ -48,23 +48,26 @@ def set_marketo_course_access_date(request):
         }, status=500)
     try:
         mc = get_marketo_client()
-        mkto_field_id = microsite.get_value("marketo_course_access_field_map")[course_id]
+        now = str(datetime.datetime.now())
+        mkto_course_field_id = microsite.get_value("marketo_course_access_field_map")[course_id]
+        mkto_path_field_id = microsite.get_value("marketo_va_activity_field")
         status = mc.execute(method='update_lead', lookupField='email',
                             lookupValue=email,
-                            values={mkto_field_id: str(datetime.datetime.now())})
-
+                            values={mkto_course_field_id: now,
+                                    mkto_path_field_id: now})
         if status == 'updated':
             return JsonResponse({
                 "success": True
             }, status=200)
 
+
     except MarketoException as e:
         errstr = e
 
-    logger.warn(('Failed to mark course {0} complete for Lead with '
+    logger.warn(('Failed to mark course {0} and Learning Path access date for Lead with '
                  'email {1}.  Error: {2}').format(course_id, email, errstr))
 
     return JsonResponse({
         "success": False,
-        "error": 'Failed to update course last access date',
+        "error": 'Failed to update course or learning path last access date',
     }, status=200)
