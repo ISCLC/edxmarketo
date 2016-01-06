@@ -88,7 +88,8 @@ def update_marketo_complete(course_map, course_id, email, complete=True):
                             lookupValue=email,
                             values={mkto_field_id: complete})
         if status != 'updated':
-            raise MarketoException("Update failed with status {0}".format(status))
+            raise MarketoException({'message': "Update failed with status {0}".format(status), 'code': None})
+
 
     except MarketoException as e:
         logger.warn(('Failed to mark course {0} complete for Lead with '
@@ -223,7 +224,7 @@ def handle_va_enrollment_event(sender, student, **kwargs):
                             lookupValue=student.email,
                             values={mkto_field_id: True})
         if status != 'updated':
-            raise MarketoException("Update failed with status {0}".format(status))
+            raise MarketoException({'message': "Update failed with status {0}".format(status), 'code': None})
 
     except MarketoException as e:
         logger.warn(('Can\'t set VA Learning Path Enrolled for Lead with email {0}.').format(student.email))
