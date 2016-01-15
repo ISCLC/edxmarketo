@@ -156,9 +156,11 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
     for section_format, sections in grading_context['graded_sections'].iteritems():
 
         for section in sections:
+
+            section_descriptor = section['section_descriptor']
+            section_name = section_descriptor.display_name_with_default
+
             if settings.DEBUG:
-                section_descriptor = section['section_descriptor']
-                section_name = section_descriptor.display_name_with_default
                 logger.info('Checking completion of section {}'.format(section_name))
 
             def noop_track_function(event_type, event):
