@@ -215,18 +215,22 @@ def handle_va_enrollment_event(sender, student, **kwargs):
             ):
         return
 
-    logger.info(('Setting VA Learning Path Enrolled for Lead with email {0}.').format(student.email))
-    mkto_field_id = get_value("marketo_va_enrollment_field_id", None)
-    if not mkto_field_id:
+    logger.info(('Setting VA Learning Path Enrolled and edX registered for Lead with email {0}.').format(student.email))
+    mkto_field_id_va = get_value("marketo_va_enrollment_field_id", None)
+    mkto_field_id_edx = get_value("marketo_edx_enrollment_field_id", None)
+    if not mkto_field_id_va:
         logger.warn(('Can\'t set VA Learning Path Enrolled for Lead with email {0}.').format(student.email))
+    if not mkto_field_id_edx:
+        logger.warn(('Can\'t set edX Registered for Lead with email {0}.').format(student.email))
 
     try:
         mc = get_marketo_client()
         status = mc.execute(method='update_lead', lookupField='email',
                             lookupValue=student.email,
-                            values={mkto_field_id: True})
+                            values={mkto_field_id_va: True,
+                                    mkto_field_id_edx: True})
         if status != 'updated':
             raise MarketoException({'message': "Update failed with status {0}".format(status), 'code': None})
 
     except MarketoException as e:
-        logger.warn(('Can\'t set VA Learning Path Enrolled for Lead with email {0}.').format(student.email))
+        logger.warn(('Can\'t set VA Learning Path Enrolled or edX Registered for Lead with email {0}.').format(student.email))
