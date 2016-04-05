@@ -5,11 +5,9 @@ import json
 from django.conf import settings
 from django.dispatch import receiver
 
-from courseware.courses import get_course
 from courseware.models import StudentModuleHistory
 from courseware.model_data import FieldDataCache
 from courseware.module_render import get_module_for_descriptor_internal
-from courseware.grades import manual_transaction, get_score
 from courseware.module_utils import yield_dynamic_descriptor_descendents
 from courseware.signals import grading_event
 
@@ -104,6 +102,9 @@ def handle_check_marketo_completion_score(sender, module, grade, max_grade, **kw
     completion percentage for the StudentModule's related Course, and then
     make a REST API request to Marketo to update the completion field.
     """
+    from courseware.courses import get_course
+    from courseware.grades import manual_transaction, get_score
+
     if not grade:
         # a zero grade can't increase the Marketo complete score so no reason to check
         # we shouldn't get a False or None grade so we'll throw those out too
