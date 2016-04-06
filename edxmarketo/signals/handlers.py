@@ -13,7 +13,10 @@ try:
 except ImportError:
     pass  # dogwood, pass for now
 
-from courseware.signals import grading_event
+try:
+    from courseware.signals import grading_event
+except:
+    from courseware.models import SCORE_CHANGED as grading_event
 
 from microsite_configuration.microsite import get_value  # keep as-is for test mocking
 
