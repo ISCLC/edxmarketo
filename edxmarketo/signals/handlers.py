@@ -8,7 +8,11 @@ from django.dispatch import receiver
 from courseware.models import StudentModuleHistory
 from courseware.model_data import FieldDataCache
 from courseware.module_render import get_module_for_descriptor_internal
-from courseware.module_utils import yield_dynamic_descriptor_descendents
+try:
+    from courseware.module_utils import yield_dynamic_descriptor_descendents
+except ImportError:
+    pass  # dogwood, pass for now
+
 from courseware.signals import grading_event
 
 from microsite_configuration.microsite import get_value  # keep as-is for test mocking
